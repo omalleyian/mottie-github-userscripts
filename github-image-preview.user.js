@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name        GitHub Image Preview
-// @version     2.0.8
+// @version     2.1.0
 // @description A userscript that adds clickable image thumbnails
 // @license     MIT
 // @author      Rob Garrison
@@ -26,19 +26,12 @@
 	GM_addStyle(`
 		.ghip-wrapper .ghip-content { display:none; }
 		.ghip-wrapper.ghip-show-previews .ghip-content { display:flex; width:100%; }
-		.ghip-wrapper.ghip-show-previews .Box-row { border:0 !important;
-			background-color:transparent !important; }
-		.ghip-show-previews .Box-row:not(.ghsc-header):not(.hidden) > div[role] {
-			display:none !important; }
 		.ghip-wrapper.ghip-show-previews svg.ghip-non-image,
         .ghip-wrapper.ghip-show-previews img.ghip-non-image { height:80px; width:80px;
 			margin-top:15px; }
 		.ghip-wrapper.ghip-show-previews .image { width:100%; position:relative;
 			overflow:hidden; text-align:center; }
 
-		.ghip-wrapper.ghip-tiled .Box-row:not(.ghsc-header):not(.hidden) {
-			width:24.5%; max-width:24.5%; justify-content:center; overflow:hidden;
-			display:inline-flex !important; padding:8px !important; }
 		.ghip-wrapper.ghip-tiled .image { height:180px;	margin:12px !important; }
 		.ghip-wrapper.ghip-tiled .image img,
 			.ghip-wrapper svg { max-height:130px; max-width:90%; }
@@ -75,6 +68,7 @@
 
 	const folderIconClasses = `
 		.octicon-file-directory,
+		.octicon-file-directory-fill,
 		.octicon-file-symlink-directory,
 		.octicon-file-submodule`;
 
@@ -101,29 +95,44 @@
 		"</span>"
 	].join("");
 
-	const contentWrap = document.createElement("div");
+	const contentWrap = document.createElement("td");
 	contentWrap.className = "ghip-content";
+	contentWrap.setAttribute("colspan", "5");
 
 	function setupWraper() {
-		// set up wrapper
-		const grid = $("div[role='grid']", $("#files").parentElement);
-		if (grid) {
-			grid.parentElement.classList.add("ghip-wrapper");
+		// set up wrapper - find the table by the heading's aria-labelledby
+		const table = $("table[aria-labelledby='folders-and-files']");
+		if (table && table.parentElement) {
+			table.parentElement.classList.add("ghip-wrapper");
 		}
 	}
 
 	function addToggles() {
-		if ($(".gh-img-preview") || !$(".file-navigation")) {
+		if ($(".gh-img-preview") || !$("#repos-file-tree")) {
 			return;
 		}
 		const div = document.createElement("div");
-		const btn = `btn BtnGroup-item tooltipped tooltipped-n" aria-label="Show`;
-		div.className = "BtnGroup ml-2 gh-img-preview";
+		const btn = `btn BtnGroup-item tooltipped tooltipped-sw" aria-label="Show`;
+		div.className = "BtnGroup ml-auto gh-img-preview";
+		div.style.cssText = "display: flex; gap: 4px; margin-left: auto;";
 		div.innerHTML = `
 			<button type="button" class="ghip-tiled ${btn} tiled files with image preview">${tiled}</button>
 			<button type="button" class="ghip-fullw ${btn} full width files with image preview">${fullWidth}</button>
 		`;
-		$(".file-navigation").appendChild(div);
+		
+		// Find the container - look for the parent of the branch selector button
+		const branchSelector = $("#repos-file-tree button[aria-label*='branch'], #repos-file-tree button[data-testid='anchor-button']");
+		const targetContainer = branchSelector ? branchSelector.closest("div").parentElement : null;
+		
+		if (targetContainer) {
+			targetContainer.appendChild(div);
+		} else {
+			// Fallback: try to find any container that has both the branch selector and search
+			const fallbackContainer = $("#repos-file-tree [data-hotkey='w']");
+			if (fallbackContainer && fallbackContainer.parentElement) {
+				fallbackContainer.parentElement.appendChild(div);
+			}
+		}
 
 		$(".ghip-tiled", div).addEventListener("click", event => {
 			openView("tiled", event);
@@ -153,8 +162,8 @@
 				if (!el.classList.contains("selected")) {
 					return showList();
 				}
+				showPreview(name);
 			}
-			showPreview(name);
 		}
 	}
 
@@ -183,14 +192,17 @@
 		if (!wrap) {
 			return;
 		}
-		$$(".Box-row", wrap).forEach(row => {
+		$$(".react-directory-row", wrap).forEach(row => {
 			let content = "";
-			// not every submodule includes a link; reference examples from
-			// see https://github.com/electron/electron/tree/v1.1.1/vendor
-			const el = $("div[role='rowheader'] a, div[role='rowheader'] span[title]", row);
-			const url = el && el.nodeName === "A" ? el.href : "";
-			// use innerHTML because some links include path - see "third_party/lss"
-			const fileName = el && el.textContent.trim() || "";
+			
+			// Find the link in the filename cell - use more generic selectors
+			const linkEl = $(".react-directory-filename-cell a, .react-directory-truncate a", row);
+			const url = linkEl ? linkEl.href : "";
+			const fileName = linkEl ? linkEl.textContent.trim() : "";
+			
+			// Check if this is the parent directory link
+			const isParentDir = row.querySelector('[data-testid="up-tree"]');
+			
 			// add link color
 			const title = (type = "file-name") =>
 				`<h4
@@ -198,11 +210,12 @@
 					title="${fileName}"
 				>${fileName}</h4>`;
 
-			if (el && el.title.includes("parent dir")) {
+			if (isParentDir) {
 				// *** up tree link ***
-				content = url ?
+				const upTreeLink = $("a[data-testid='up-tree']", row);
+				content = upTreeLink ?
 					updateTemplate(
-						url,
+						upTreeLink.href,
 						"<h4 class='ghip-up-tree'>&middot;&middot;</h4>"
 					) : "";
 			} else if (imgExt.test(url)) {
@@ -217,7 +230,7 @@
 				content = updateTemplate(url, `${title()}${svgPlaceholder(url)}`);
 			} else {
 				// *** non-images (file/folder icons) ***
-				const svg = $("[role='gridcell'] svg, [role='gridcell'] img", row);
+				const svg = $(".react-directory-filename-column svg", row);
 				if (svg) {
 					// non-files svg class: "directory", "submodule" or "symlink"
 					// add "ghip-folder" class for file-filters userscript
@@ -237,7 +250,7 @@
 			}
 			const preview = $(".ghip-content", row) || contentWrap.cloneNode();
 			preview.innerHTML = content;
-			row.append(preview);
+			row.appendChild(preview);
 		});
 		lazyLoadSVGs();
 	}
@@ -309,7 +322,8 @@
 	}
 
 	function init() {
-		if ($("#files")) {
+		// Check if we're on a repository file/folder view page
+		if ($("table[aria-labelledby='folders-and-files']")) {
 			setupWraper();
 			addToggles();
 			setTimeout(setInitState, 0);
