@@ -3,8 +3,8 @@
 // @version     2.4.0
 // @description A userscript that adds clickable image thumbnails
 // @license     MIT
-// @author      Rob Garrison (Refactored)
-// @namespace   https://github.com/Mottie
+// @author      Ian O'Malley
+// @namespace   https://github.com/omalleyian
 // @match       https://github.com/*
 // @run-at      document-idle
 // @grant       GM_addStyle
@@ -14,6 +14,8 @@
 // @connect     github.com
 // @connect     githubusercontent.com
 // @icon        https://github.githubassets.com/pinned-octocat.svg
+// @updateURL   https://raw.githubusercontent.com/omalleyian/mottie-github-userscripts/image-preview-fix/github-image-preview-refactor.user.js
+// @downloadURL https://raw.githubusercontent.com/omalleyian/mottie-github-userscripts/image-preview-fix/github-image-preview-refactor.user.js
 // ==/UserScript==
 
 (() => {
