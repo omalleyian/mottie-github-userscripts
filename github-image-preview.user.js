@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name        GitHub Image Preview
-// @version     2.1.0
+// @version     2.3.0
 // @description A userscript that adds clickable image thumbnails
 // @license     MIT
 // @author      Rob Garrison
@@ -24,41 +24,151 @@
 	"use strict";
 
 	GM_addStyle(`
-		.ghip-wrapper .ghip-content { display:none; }
-		.ghip-wrapper.ghip-show-previews .ghip-content { display:flex; width:100%; }
-		.ghip-wrapper.ghip-show-previews svg.ghip-non-image,
-        .ghip-wrapper.ghip-show-previews img.ghip-non-image { height:80px; width:80px;
-			margin-top:15px; }
-		.ghip-wrapper.ghip-show-previews .image { width:100%; position:relative;
-			overflow:hidden; text-align:center; }
+		/* Hide preview content by default */
+		.ghip-wrapper .ghip-content { 
+			display: none; 
+		}
+		
+		/* Hide the table when showing previews */
+		.ghip-wrapper.ghip-show-previews > table {
+			display: none;
+		}
+		
+		/* Show the preview grid */
+		.ghip-wrapper.ghip-show-previews .ghip-preview-grid {
+			display: grid;
+			gap: 16px;
+			padding: 16px;
+		}
+		
+		/* Tiled view: 4 columns grid */
+		.ghip-wrapper.ghip-tiled .ghip-preview-grid {
+			grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		}
+		
+		/* Full width view: single column */
+		.ghip-wrapper.ghip-fullw .ghip-preview-grid {
+			grid-template-columns: 1fr;
+		}
+		
+		/* Preview grid is hidden by default */
+		.ghip-preview-grid {
+			display: none;
+		}
+		
+		/* Individual preview item */
+		.ghip-preview-item {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			padding: 16px;
+			border: 1px solid var(--borderColor-default, #d0d7de);
+			border-radius: 6px;
+			background: var(--bgColor-default, #ffffff);
+			text-align: center;
+			transition: transform 0.2s, box-shadow 0.2s;
+		}
+		
+		.ghip-preview-item:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		}
+		
+		.ghip-preview-item a {
+			text-decoration: none;
+			color: inherit;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			width: 100%;
+		}
+		
+		/* Style for non-image icons in preview mode */
+		.ghip-preview-item svg.ghip-non-image,
+		.ghip-preview-item img.ghip-non-image { 
+			height: 80px; 
+			width: 80px;
+			margin: 16px 0;
+		}
+		
+		/* Image container styling */
+		.ghip-preview-item .ghip-image-container {
+			width: 100%;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			margin: 8px 0;
+		}
+		
+		/* Tiled view images */
+		.ghip-wrapper.ghip-tiled .ghip-preview-item .ghip-image-container {
+			height: 150px;
+		}
+		
+		.ghip-wrapper.ghip-tiled .ghip-preview-item img:not(.ghip-non-image) {
+			max-height: 150px;
+			max-width: 100%;
+			object-fit: contain;
+		}
+		
+		/* Zoom on hover in tiled view */
+		.ghip-wrapper.ghip-tiled .ghip-preview-item:hover img:not(.ghip-non-image) {
+			transform: scale(1.5);
+			transition: transform 0.2s;
+		}
+		
+		/* Full width view images */
+		.ghip-wrapper.ghip-fullw .ghip-preview-item .ghip-image-container {
+			height: auto;
+			max-height: 400px;
+		}
+		
+		.ghip-wrapper.ghip-fullw .ghip-preview-item img:not(.ghip-non-image) {
+			max-height: 400px;
+			max-width: 100%;
+			object-fit: contain;
+		}
 
-		.ghip-wrapper.ghip-tiled .image { height:180px;	margin:12px !important; }
-		.ghip-wrapper.ghip-tiled .image img,
-			.ghip-wrapper svg { max-height:130px; max-width:90%; }
-		/* zoom doesn't work in Firefox, but "-moz-transform:scale(3);"
-			doesn't limit the size of the image, so it overflows */
-		.ghip-wrapper.ghip-tiled .image:hover img:not(.ghip-non-image) { zoom:3; }
+		/* File name styling */
+		.ghip-preview-item h4 { 
+			overflow: hidden; 
+			white-space: nowrap;
+			text-overflow: ellipsis; 
+			margin: 8px 0;
+			width: 100%;
+			font-size: 14px;
+			font-weight: 600;
+		}
+		
+		/* Parent directory link */
+		.ghip-preview-item.ghip-parent-dir {
+			background: var(--bgColor-muted, #f6f8fa);
+		}
+		
+		.ghip-preview-item .ghip-up-tree {
+			font-size: 32px;
+			margin: 16px 0;
+		}
 
-		.ghip-wrapper.ghip-fullw .image { height:unset; padding-bottom:0; }
-
-		.ghip-wrapper .image span { display:block;	position:relative; }
-		.ghip-wrapper .ghip-folder { margin-bottom:2em; }
-		.image .ghip-file-type { font-size:40px; top:-2em; left:0; z-index:2;
-			position:relative; text-shadow:1px 1px 1px #fff, -1px 1px 1px #fff,
-			1px -1px 1px #fff, -1px -1px 1px #fff; }
-		.ghip-wrapper h4 { overflow:hidden; white-space:nowrap;
-			text-overflow:ellipsis; margin:0 12px 5px; }
-
-		.ghip-wrapper img, .ghip-wrapper svg { max-width:95%; }
-		.ghip-wrapper img.error { border:5px solid red;
-			border-radius:32px; }
-		.btn.ghip-tiled > *, .btn.ghip-fullw > *, .ghip-wrapper iframe {
-			pointer-events:none; vertical-align:baseline; }
-		.ghip-content span.exploregrid-item .ghip-file-name { cursor:default; }
-		/* override GitHub-Dark styles */
-		.ghip-wrapper img[src*='octocat-spinner'], img[src='/images/spinner.gif'] {
-			width:auto !important; height:auto !important; }
-		.ghip-wrapper td .simplified-path { color:#888 !important; }
+		.ghip-wrapper img, 
+		.ghip-wrapper svg { 
+			max-width: 100%; 
+		}
+		
+		.ghip-wrapper img.error { 
+			border: 5px solid red;
+			border-radius: 32px; 
+		}
+		
+		/* Button styling */
+		.gh-img-preview button {
+			cursor: pointer;
+		}
+		
+		.gh-img-preview button.selected {
+			background-color: var(--button-primary-bgColor, #1f883d);
+			color: var(--button-primary-fgColor, #ffffff);
+		}
 	`);
 
 	// supported img types
@@ -82,55 +192,42 @@
 			<path d="M0 0h16v7H0zM0 9h16v7H0z"/>
 		</svg>`;
 
-	const imgTemplate = [
-		// not using backticks here; we need to minimize extra whitespace everywhere
-		"<a href='${url}' class='exploregrid-item image m-3 float-left js-navigation-open' rel='nofollow'>",
-		"${content}",
-		"</a>"
-	].join("");
-
-	const spanTemplate = [
-		"<span class='exploregrid-item image m-3 float-left'>",
-		"${content}",
-		"</span>"
-	].join("");
-
-	const contentWrap = document.createElement("td");
-	contentWrap.className = "ghip-content";
-	contentWrap.setAttribute("colspan", "5");
-
-	function setupWraper() {
-		// set up wrapper - find the table by the heading's aria-labelledby
+	function setupWrapper() {
+		// Find the table using the aria-labelledby attribute
 		const table = $("table[aria-labelledby='folders-and-files']");
 		if (table && table.parentElement) {
 			table.parentElement.classList.add("ghip-wrapper");
+			
+			// Create preview grid container if it doesn't exist
+			if (!$(".ghip-preview-grid", table.parentElement)) {
+				const grid = document.createElement("div");
+				grid.className = "ghip-preview-grid";
+				table.parentElement.appendChild(grid);
+			}
 		}
 	}
 
 	function addToggles() {
+		// Don't add toggles if they already exist or if we're not on a file tree page
 		if ($(".gh-img-preview") || !$("#repos-file-tree")) {
 			return;
 		}
+		
 		const div = document.createElement("div");
-		const btn = `btn BtnGroup-item tooltipped tooltipped-sw" aria-label="Show`;
 		div.className = "BtnGroup ml-auto gh-img-preview";
 		div.style.cssText = "display: flex; gap: 4px; margin-left: auto;";
 		div.innerHTML = `
-			<button type="button" class="ghip-tiled ${btn} tiled files with image preview">${tiled}</button>
-			<button type="button" class="ghip-fullw ${btn} full width files with image preview">${fullWidth}</button>
+			<button type="button" class="ghip-tiled btn BtnGroup-item" title="Show tiled files with image preview">${tiled}</button>
+			<button type="button" class="ghip-fullw btn BtnGroup-item" title="Show full width files with image preview">${fullWidth}</button>
 		`;
 		
-		// Find the container - look for the parent of the branch selector button
-		const branchSelector = $("#repos-file-tree button[aria-label*='branch'], #repos-file-tree button[data-testid='anchor-button']");
-		const targetContainer = branchSelector ? branchSelector.closest("div").parentElement : null;
+		// Find the container with the branch selector
+		const branchSelector = $("#repos-file-tree button[aria-label*='branch'], #repos-file-tree button[data-hotkey='w']");
 		
-		if (targetContainer) {
-			targetContainer.appendChild(div);
-		} else {
-			// Fallback: try to find any container that has both the branch selector and search
-			const fallbackContainer = $("#repos-file-tree [data-hotkey='w']");
-			if (fallbackContainer && fallbackContainer.parentElement) {
-				fallbackContainer.parentElement.appendChild(div);
+		if (branchSelector) {
+			const targetContainer = branchSelector.parentElement.parentElement;
+			if (targetContainer) {
+				targetContainer.appendChild(div);
 			}
 		}
 
@@ -145,12 +242,13 @@
 	function setInitState() {
 		const state = GM_getValue("gh-image-preview");
 		if (state) {
+			// Don't pass event, so the button will be properly selected
 			openView(state);
 		}
 	}
 
 	function openView(name, event) {
-		setupWraper();
+		setupWrapper();
 		const wrap = $(".ghip-wrapper");
 		if (!wrap) {
 			return;
@@ -158,12 +256,12 @@
 		const el = $(".ghip-" + name);
 		if (el) {
 			if (event) {
-				el.classList.toggle("selected");
-				if (!el.classList.contains("selected")) {
+				// If clicking the already selected button, deselect it
+				if (el.classList.contains("selected")) {
 					return showList();
 				}
-				showPreview(name);
 			}
+			showPreview(name);
 		}
 	}
 
@@ -172,10 +270,16 @@
 		const wrap = $(".ghip-wrapper");
 		const selected = "ghip-" + name;
 		const notSelected = "ghip-" + (name === "fullw" ? "tiled" : "fullw");
+		
+		// Remove both view classes first
+		wrap.classList.remove("ghip-show-previews", "ghip-tiled", "ghip-fullw");
+		$(".btn.ghip-tiled").classList.remove("selected");
+		$(".btn.ghip-fullw").classList.remove("selected");
+		
+		// Add the selected view classes
 		wrap.classList.add("ghip-show-previews", selected);
 		$(".btn." + selected).classList.add("selected");
-		wrap.classList.remove(notSelected);
-		$(".btn." + notSelected).classList.remove("selected");
+		
 		GM_setValue("gh-image-preview", name);
 	}
 
@@ -192,76 +296,93 @@
 		if (!wrap) {
 			return;
 		}
-		$$(".react-directory-row", wrap).forEach(row => {
-			let content = "";
-			
-			// Find the link in the filename cell - use more generic selectors
+		
+		const grid = $(".ghip-preview-grid", wrap);
+		if (!grid) {
+			return;
+		}
+		
+		// Clear existing previews
+		grid.innerHTML = "";
+		
+		// Find all directory rows in the table
+		$$("tr.react-directory-row", wrap).forEach(row => {
+			// Find the link
 			const linkEl = $(".react-directory-filename-cell a, .react-directory-truncate a", row);
 			const url = linkEl ? linkEl.href : "";
 			const fileName = linkEl ? linkEl.textContent.trim() : "";
 			
 			// Check if this is the parent directory link
-			const isParentDir = row.querySelector('[data-testid="up-tree"]');
+			const isParentDir = !!row.querySelector('[data-testid="up-tree"]');
 			
-			// add link color
-			const title = (type = "file-name") =>
-				`<h4
-					class="ghip-${type}"
-					title="${fileName}"
-				>${fileName}</h4>`;
-
+			// Create preview item
+			const item = document.createElement("div");
+			item.className = "ghip-preview-item";
 			if (isParentDir) {
-				// *** up tree link ***
+				item.classList.add("ghip-parent-dir");
+			}
+			
+			let content = "";
+			
+			if (isParentDir) {
+				// Parent directory link
 				const upTreeLink = $("a[data-testid='up-tree']", row);
-				content = upTreeLink ?
-					updateTemplate(
-						upTreeLink.href,
-						"<h4 class='ghip-up-tree'>&middot;&middot;</h4>"
-					) : "";
+				content = upTreeLink ? 
+					`<a href="${upTreeLink.href}"><h4 class="ghip-up-tree">..</h4></a>` : "";
 			} else if (imgExt.test(url)) {
-				// *** image preview ***
-				content = updateTemplate(
-					url,
-					`${title()}<img src='${url}?raw=true'/>`
-				);
+				// Image preview
+				content = `
+					<a href="${url}">
+						<h4 title="${fileName}">${fileName}</h4>
+						<div class="ghip-image-container">
+							<img src="${url}?raw=true" alt="${fileName}"/>
+						</div>
+					</a>
+				`;
 			} else if (svgExt.test(url)) {
-				// *** svg preview ***
-				// loaded & encoded because GitHub sets content-type headers as a string
-				content = updateTemplate(url, `${title()}${svgPlaceholder(url)}`);
+				// SVG preview
+				content = `
+					<a href="${url}">
+						<h4 title="${fileName}">${fileName}</h4>
+						<div class="ghip-image-container">
+							${svgPlaceholder(url, fileName)}
+						</div>
+					</a>
+				`;
 			} else {
-				// *** non-images (file/folder icons) ***
+				// Non-images (file/folder icons)
 				const svg = $(".react-directory-filename-column svg", row);
 				if (svg) {
-					// non-files svg class: "directory", "submodule" or "symlink"
-					// add "ghip-folder" class for file-filters userscript
-					const noExt = svg.matches(folderIconClasses) ? " ghip-folder" : "";
+					const isFolder = svg.matches(folderIconClasses);
 					const clone = svg.cloneNode(true);
 					clone.classList.add("ghip-non-image");
-					// include "leaflet-tile-container" to invert icon for GitHub-Dark
-					content = `${title("non-image")}<span class="leaflet-tile-container${noExt}">` +
-						clone.outerHTML + "</span>";
-					content = url ?
-						updateTemplate(url, content) :
-						// empty url; use non-link template
-						// see "depot_tools @ 4fa73b8" at
-						// https://github.com/electron/electron/tree/v1.1.1/vendor
-						updateTemplate(url, content, spanTemplate);
+					
+					const link = url ? `<a href="${url}">` : `<span>`;
+					const closeLink = url ? `</a>` : `</span>`;
+					
+					content = `
+						${link}
+							<h4 title="${fileName}">${fileName}</h4>
+							<div class="ghip-image-container ${isFolder ? 'ghip-folder' : ''}">
+								${clone.outerHTML}
+							</div>
+						${closeLink}
+					`;
 				}
 			}
-			const preview = $(".ghip-content", row) || contentWrap.cloneNode();
-			preview.innerHTML = content;
-			row.appendChild(preview);
+			
+			if (content) {
+				item.innerHTML = content;
+				grid.appendChild(item);
+			}
 		});
+		
 		lazyLoadSVGs();
 	}
 
-	function updateTemplate(url, content, template = imgTemplate) {
-		return template.replace("${url}", url).replace("${content}", content);
-	}
-
-	function svgPlaceholder(url) {
+	function svgPlaceholder(url, fileName) {
 		const str = url.substring(url.lastIndexOf("/") + 1, url.length);
-		return `<img data-svg-holder="${str}" data-svg-url="${url}" alt="${str}" src="${spinner}" />`;
+		return `<img data-svg-holder="${str}" data-svg-url="${url}" alt="${fileName}" src="${spinner}" />`;
 	}
 
 	function lazyLoadSVGs() {
@@ -273,8 +394,6 @@
 						const img = entry.target;
 						setTimeout(() => {
 							const bounds = img.getBoundingClientRect();
-							// Don't load all svgs when the user scrolls down the page really
-							// fast
 							if (bounds.top <= window.innerHeight && bounds.bottom >= 0) {
 								getSVG(imgObserver, img);
 							}
@@ -282,9 +401,7 @@
 					}
 				});
 			});
-			imgs.forEach(function(img) {
-				imgObserver.observe(img);
-			});
+			imgs.forEach(img => imgObserver.observe(img));
 		}
 	}
 
@@ -293,13 +410,12 @@
 			method: "GET",
 			url: img.dataset.svgUrl + "?raw=true",
 			onload: response => {
-				const url = response.finalUrl,
-					file = url.substring(url.lastIndexOf("/") + 1, url.length),
-					target = $("[data-svg-holder='" + file + "']"),
-					resp = response.responseText,
-					// Loading too many images at once makes GitHub returns a "You have triggered
-					// an abuse detection mechanism" message
-					abuse = resp.includes("abuse detection");
+				const url = response.finalUrl;
+				const file = url.substring(url.lastIndexOf("/") + 1, url.length);
+				const target = $("[data-svg-holder='" + file + "']");
+				const resp = response.responseText;
+				const abuse = resp.includes("abuse detection");
+				
 				if (target && !abuse) {
 					const encoded = window.btoa(response.responseText);
 					target.src = "data:image/svg+xml;base64," + encoded;
@@ -317,14 +433,14 @@
 	function $(selector, el) {
 		return (el || document).querySelector(selector);
 	}
+	
 	function $$(selector, el) {
 		return [...(el || document).querySelectorAll(selector)];
 	}
 
 	function init() {
-		// Check if we're on a repository file/folder view page
 		if ($("table[aria-labelledby='folders-and-files']")) {
-			setupWraper();
+			setupWrapper();
 			addToggles();
 			setTimeout(setInitState, 0);
 		}
